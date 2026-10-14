@@ -1,0 +1,12 @@
+{
+  "name": "real-world",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15"
+  }
+}

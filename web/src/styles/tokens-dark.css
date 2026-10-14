@@ -1,0 +1,22 @@
+/* Dark theme for the product, built from the same hues as tokens.css; change both together. */
+@media (prefers-color-scheme: dark) {
+  .globe-poster {
+    filter: invert(0.9) hue-rotate(180deg);
+  }
+
+  :root {
+    --paper: #0b0b0d;
+    --paper-2: #1b1b1f;
+    --surface: #141417;
+    --ink: #ededf0;
+    --muted: #9a9aa5;
+    --accent: #818cf8;
+    --accent-2: #f59e0b;
+    --line: #26262c;
+    --focus: #818cf8;
+    --on-accent: #0b0b0d;
+    --card-shadow: none;
+    --globe-dot: #818cf8;
+    --globe-glow: 129, 140, 248;
+  }
+}

@@ -1,0 +1,34 @@
+# Receipts
+
+## What it does
+
+A public page and API that list every forecast we committed, before its outcome existed, with proof it has not been changed since. Each row shows the question, which forecaster made it (our simulation, a plain LLM reading the same news, the market), the probability, the market price at the moment we committed, the commit time, the hash, the outcome once known, and the Brier score. Anyone can press "verify" and their browser recomputes every hash and the chain back to the first day, without trusting our server.
+
+## Who it is for
+
+Skeptics: HN readers, forecasting researchers, YC partners and consumer founders who want to know whether this works. It is the page we link when someone asks "how accurate is it?".
+
+## How we know it works
+
+- Format and rules: [decision 0002](../research/decisions/0002-benchmark-and-receipts.md). Contract: `GET /v1/receipts` (days, newest first, each with root, previous root, leaf count and anchor status) and `GET /v1/receipts/{date}` (the day record plus every entry, its salt and its leaf hash, its anchor status and every stored timestamp proof). A forecast entry also carries `question` (text, resolution source, resolves by) from the committed question set, so the page can show what was forecast and that it was committed before the resolution date.
+- Anchoring: the daily cycle's `anchor` step, right after `publish`, anchors each committed day except a [fixture day](world.md); `python -m rw.ledger anchor --date D` does the same for one day by hand. Both send the day's record hash to FreeTSA for an RFC 3161 token and to an OpenTimestamps calendar for a pending proof, and stores each reply in an append-only table. A day is `anchored` only when a stored token's message imprint equals its record hash, rechecked on every read; `pending` when it has only an OpenTimestamps calendar proof; otherwise `not_anchored`. `verify` fails on a token that vouches for any other hash. The step records what already happened, so a timeout (`ANCHOR_TIMEOUT_S`) or a refused reply never stops `score` and `learn`: the day stays `pending` or `not_anchored`, the step's `stage_runs` row says why, and a rerun of the day tries again. A day already `anchored` sends nothing. `publish` also writes the day's export, `var/receipts/<date>.json` (day record, record hash, every entry with its salt and leaf hash), which `ledger.receipt_problems` checks on its own. Tests replay recorded FreeTSA and calendar replies (`engine/tests/test_ledger.py`, `engine/tests/test_daily.py`, `api/tests/test_api.py`).
+- Inclusion proof: `GET /v1/receipts/{date}/leaves/{leaf_hash}` returns one receipt (entry, salt, leaf hash, question, outcome, Brier, anchor status) with `proof`, the sibling hashes each marked `left` or `right`, and the day's `root`. Hashing each step as `sha256(0x01 || left || right)` from the leaf must reach the root; `ledger.verify_inclusion` does it, and a changed leaf, sibling or side fails (`engine/tests/test_ledger.py`, `api/tests/test_api.py`). The format of [decision 0002](../research/decisions/0002-benchmark-and-receipts.md) is unchanged.
+- Engine config versions: when the `improve` step promotes a recalibration map ([decision 0008](../research/decisions/0008-self-improving-loop.md)), the next day's publish adds one `engine_config` leaf with the version id (the SHA-256 of its record), its parent, the map's params, the evidence (n, Brier before and after, interval) and the date it takes effect. From that day every `sim` forecast carries the mapped probability and a `config_hash` that covers the version id; `plain_llm` and `market` are never mapped, and no earlier leaf changes (checked by `engine/tests/test_improve.py`). Rollback is a new version that re-pins an earlier one's params.
+- `python -m rw.ledger verify --date D` and the browser verifier both pass on fixture days and both fail when one entry byte, one leaf or one chain link is changed; the shared test vector proves Python and TypeScript hash identically.
+- The database refuses UPDATE and DELETE on ledger tables (test).
+- Every open question in a committed question set has one leaf per forecaster per day; the verifier reports any gap.
+- The page states that a constant 50% scores 0.25, and shows the latest day record open and every earlier day as one 44px row (a small seal grid of its root, "{date} · {n} receipts · root {8}…{8}" in mono and its stamps) that opens in place; `/receipts#{date}` opens that day and scrolls to it. An open day is a receipt: its row carries the stamp ("Anchored" in green, "Anchor pending" in clay, plus "Verified" in green after the check), then root, previous root, record hash, forecast count and an Anchor column reading "2026-10-12 17:19:19 UTC by freetsa.org (RFC 3161 token)" with the token as a download, "OpenTimestamps proof awaits a Bitcoin block", or "Not yet anchored" (`web/src/App.test.tsx`). Both `Z` and `+00:00` timestamps read the same.
+- Mirror: `make mirror` (`scripts/mirror_receipts.sh`) copies `var/receipts/*.json` into a clone of the git repo named by `RECEIPTS_MIRROR_REMOTE`, commits `chore: receipts through <date>` only when a file is new, and pushes. It skips [fixture days](world.md). It checks each day on its own (`python -m rw.ledger check-export`) and refuses the whole push, naming the file, when any fails. It refuses to push when a day already mirrored differs from the local copy, and prints `receipts mirror off: RECEIPTS_MIRROR_REMOTE is not set` and exits 0 when the remote is unset. It runs on its own, after the daily cycle, so a push error never fails the cycle. The public mirror goes live once the founder creates the public repo and sets the remote. Tested against a local bare repo (`engine/tests/test_mirror.py`).
+- Anyone can check a token without our code: `openssl ts -reply -in D.tsr -text` prints the message data, which must equal the day's record hash; `openssl ts -verify` with FreeTSA's published certificates checks the signature ([engineering/070](../research/engineering/070-commit-reveal-timestamping.md)).
+
+## What it is not
+
+- Not a leaderboard of accuracy claims. No percentage, no "beats the market" (see [benchmark](benchmark.md)).
+- No edits or deletions, ever. A correction is a new entry that names the one it corrects.
+- No fork results: counterfactuals cannot be scored.
+- Our own check of a token stops at its message imprint. The token's signature and certificate chain, and the upgrade of a pending OpenTimestamps proof to a Bitcoin attestation, are follow-ups.
+
+## Where the code lives
+
+- `engine/rw/ledger.py`, the receipts endpoints in `api/rw_api/`, the page and verifier in `web/`.
+- Research: [engineering/070](../research/engineering/070-commit-reveal-timestamping.md), [science/030](../research/science/030-forecast-scoring.md), [product/087](../research/product/087-trust-and-explainability.md), [business/092](../research/business/092-moat-theory.md).
